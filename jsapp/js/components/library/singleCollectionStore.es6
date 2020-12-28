@@ -1,4 +1,3 @@
-import _ from 'underscore';
 import Reflux from 'reflux';
 import {hashHistory} from 'react-router';
 import {
@@ -6,14 +5,21 @@ import {
   searchBoxStore
 } from '../header/searchBoxStore';
 import assetUtils from 'js/assetUtils';
-import {isOnLibraryRoute} from './libraryUtils';
+import {
+  isOnSingleCollectionRoute,
+  getCurrentCollectionUID
+} from './libraryUtils';
 import {actions} from 'js/actions';
 import {
   ORDER_DIRECTIONS,
   ASSETS_TABLE_COLUMNS
 } from './assetsTable';
 
-const myLibraryStore = Reflux.createStore({
+// A store that listens for actions on assets from a single collection
+// Extends most functionality from myLibraryStore but overwrites some actions:
+// - searchMyLibraryAssets.* -> searchMyCollectionAssets.*
+// - searchMyCollectionMetadata.completed -> searchMyCollectionMetadata.completed
+const singleCollectionStore = Reflux.createStore({
   /**
    * A method for aborting current XHR fetch request.
    * It doesn't need to be defined upfront, but I'm adding it here for clarity.
@@ -37,8 +43,6 @@ const myLibraryStore = Reflux.createStore({
   },
 
   init() {
-    this.fetchDataDebounced = _.debounce(this.fetchData.bind(true), 2500);
-
     this.setDefaultColumns();
 
     hashHistory.listen(this.onRouteChange.bind(this));
@@ -46,18 +50,16 @@ const myLibraryStore = Reflux.createStore({
     actions.library.moveToCollection.completed.listen(this.onMoveToCollectionCompleted);
     actions.library.subscribeToCollection.completed.listen(this.fetchData.bind(this, true));
     actions.library.unsubscribeFromCollection.completed.listen(this.fetchData.bind(this, true));
-    actions.library.searchMyLibraryAssets.started.listen(this.onSearchStarted);
-    actions.library.searchMyLibraryAssets.completed.listen(this.onSearchCompleted);
-    actions.library.searchMyLibraryAssets.failed.listen(this.onSearchFailed);
-    actions.library.searchMyLibraryMetadata.completed.listen(this.onSearchMetadataCompleted);
     actions.resources.loadAsset.completed.listen(this.onAssetChanged);
     actions.resources.updateAsset.completed.listen(this.onAssetChanged);
     actions.resources.cloneAsset.completed.listen(this.onAssetCreated);
     actions.resources.createResource.completed.listen(this.onAssetCreated);
     actions.resources.deleteAsset.completed.listen(this.onDeleteAssetCompleted);
-    // TODO Improve reaction to uploads being finished after task is done:
-    // https://github.com/kobotoolbox/kpi/issues/476
-    actions.resources.createImport.completed.listen(this.fetchDataDebounced);
+    // Actions unique to a single collection store (overwriting myLibraryStore)
+    actions.library.searchMyCollectionAssets.started.listen(this.onSearchStarted);
+    actions.library.searchMyCollectionAssets.completed.listen(this.onSearchCompleted);
+    actions.library.searchMyCollectionAssets.failed.listen(this.onSearchFailed);
+    actions.library.searchMyCollectionMetadata.completed.listen(this.onSearchMetadataCompleted);
 
     // startup store after config is ready
     actions.permissions.getConfig.completed.listen(this.startupStore);
@@ -68,7 +70,7 @@ const myLibraryStore = Reflux.createStore({
    * otherwise wait until route changes to a library (see `onRouteChange`)
    */
   startupStore() {
-    if (this.isVirgin && isOnLibraryRoute() && !this.data.isFetchingData) {
+    if (this.isVirgin && isOnSingleCollectionRoute() && !this.data.isFetchingData) {
       this.fetchData(true);
     }
   },
@@ -90,7 +92,7 @@ const myLibraryStore = Reflux.createStore({
       searchPhrase: searchBoxStore.getSearchPhrase(),
       pageSize: this.PAGE_SIZE,
       page: this.data.currentPage,
-      collectionsFirst: true
+      uid: getCurrentCollectionUID()
     };
 
     if (this.data.filterColumnId !== null) {
@@ -103,13 +105,14 @@ const myLibraryStore = Reflux.createStore({
   },
 
   fetchMetadata() {
-    actions.library.searchMyLibraryMetadata(this.getSearchParams());
+    actions.library.searchMyCollectionMetadata(this.getSearchParams());
   },
 
   /**
    * @param {boolean} needsMetadata
    */
   fetchData(needsMetadata = false) {
+    actions.library.searchMyCollectionMetadata(this.getSearchParams());
     if (this.abortFetchData) {
       this.abortFetchData();
     }
@@ -127,22 +130,22 @@ const myLibraryStore = Reflux.createStore({
     const direction = this.data.orderValue === ORDER_DIRECTIONS.get('ascending') ? '' : '-';
     params.ordering = `${direction}${orderColumn.orderBy}`;
 
-    actions.library.searchMyLibraryAssets(params);
+    actions.library.searchMyCollectionAssets(params);
   },
 
   onRouteChange(data) {
-    if (this.isVirgin && isOnLibraryRoute() && !this.data.isFetchingData) {
+    if (this.isVirgin && isOnSingleCollectionRoute() && !this.data.isFetchingData) {
       this.fetchData(true);
     } else if (
       this.previousPath !== null &&
       (
-        // coming from outside of library
-        this.previousPath.split('/')[1] !== 'library' ||
+        // coming from the library
+        this.previousPath.split('/')[1] === 'library' ||
         // public-collections is a special case that is kinda in library, but
         // actually outside of it
         this.previousPath.startsWith('/library/public-collections')
       ) &&
-      isOnLibraryRoute()
+      isOnSingleCollectionRoute()
     ) {
       // refresh data when navigating into library from other place
       this.setDefaultColumns();
@@ -329,4 +332,4 @@ const myLibraryStore = Reflux.createStore({
   }
 });
 
-export default myLibraryStore;
+export default singleCollectionStore;
