@@ -20,6 +20,8 @@ import {
   PROJECT_SETTINGS_CONTEXTS,
   MODAL_TYPES,
   ASSET_TYPES,
+  ASSET_KINDS,
+  PERMISSIONS_CODENAMES,
   ANON_USERNAME
 } from './constants';
 import {dataInterface} from './dataInterface';
@@ -635,6 +637,44 @@ mixins.clickAssets = {
           type: MODAL_TYPES.SHARING,
           assetid: uid
         });
+      },
+      removeSharing: function(uid) {
+        /**
+         * Extends `removeAllPermissions` from `userPermissionRow.es6`:
+         * Checks for permissions from current user before finding correct
+         * "most basic" permission to remove.
+         */
+        const asset = stores.selectedAsset.asset || stores.allAssets.byUid[uid];
+        let actionFn;
+        let targetPermUrl;
+        if (asset.kind === ASSET_KINDS.get('asset')) {
+          actionFn = actions.permissions.removeAssetPermission;
+          targetPermUrl = permConfig.getPermissionByCodename(PERMISSIONS_CODENAMES.get('view_asset')).url;
+        } else if (asset.kind === ASSET_KINDS.get('collection')) {
+          actionFn = actions.permissions.removeCollectionPermission;
+          targetPermUrl = permConfig.getPermissionByCodename(PERMISSIONS_CODENAMES.get('view_collection')).url;
+        }
+        const userViewAssetPerm = asset.permissions.find((perm) => {
+          // Get permissions related to current user
+          var permUserUrl = perm.user.split('/');
+          if (permUserUrl[permUserUrl.length - 2] === stores.session.currentAccount.username) {
+            return perm.permission === targetPermUrl;
+          }
+        });
+
+        let dialog = alertify.dialog('confirm');
+        let opts = {
+          title: t('Remove shared form'),
+          message: `${t('Are you sure you want to remove this shared form?')}`,
+          labels: {ok: t('Remove'), cancel: t('Cancel')},
+          onok: (evt, val) => {
+            actionFn(uid, userViewAssetPerm.url);
+          },
+          oncancel: () => {
+            dialog.destroy();
+          }
+        };
+        dialog.set(opts).show();
       },
       refresh: function(uid) {
         stores.pageState.showModal({

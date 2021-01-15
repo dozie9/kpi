@@ -82,6 +82,7 @@ class AssetRow extends React.Component {
 
     const assetName = this.props.name || this.props.firstQuestionLabel;
 
+
     if (this.props.has_deployment && this.props.deployment__submission_count &&
         this.userCan('view_submissions', this.props)) {
       hrefTo = `/forms/${this.props.uid}/summary`;
@@ -423,6 +424,15 @@ class AssetRow extends React.Component {
                 >
                   <i className='k-icon-trash' />
                   {t('Delete')}
+                </bem.PopoverMenu__link>
+              }
+              {!isSelfOwned &&
+                <bem.PopoverMenu__link
+                  m={'removeSharing'}
+                  data-action={'removeSharing'}
+                >
+                  <i className='k-icon-trash' />
+                  {t('Remove Shared Form')}
                 </bem.PopoverMenu__link>
               }
             </ui.PopoverMenu>
